@@ -6,6 +6,8 @@
     <title>地圖查詢</title>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js" integrity="sha512-pumBsjNRGGqkPzKHndZMaAG+bir374sORyzM3uulLV14lN5LyykqNk8eEeUlUkB3U0M4FApyaHraT65ihJhDpQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-csv/1.0.21/jquery.csv.min.js" integrity="sha512-Y8iWYJDo6HiTo5xtml1g4QqHtl/PO1w+dmUpQfQSOTqKNsMhExfyPN2ncNAe9JuJUSKzwK/b6oaNPop4MXzkwg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="qt_base64.js"></script>
+<script src="qt_ajax.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin=""/>
     <style>
         body, html {
@@ -33,6 +35,7 @@
 		經緯度：<span id="latlng"></span>，地號：<span id="land-info"></span>
 		<ul id="list">
 		</ul>
+		<div id="land-info"></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin=""></script>
@@ -194,10 +197,95 @@ var update_info = function(){
 		}
 		geojson = L.geoJSON(ret, { }).addTo(map);
 		prop = ret.features[0].properties;
+        get_land_info_data(prop.area_id.substr(0, 1), prop.section_id, prop.land_id, function(json){
+			// https://maps.nlsc.gov.tw/T09/js/qt_ajax.js?v=1682840092540
+			var aa10 = "";
+			var aa11 = "(空白)";
+			var aa12 = "(空白)";
+			var aa27 = "--";
+			var aa16 = "--";
+			var aa05 = "--";
+			if(isObj(json.ralid.AA10)){
+				aa10 = json.ralid.AA10+" 平方公尺";
+			}
+			if(isObj(json.ralid.AA11)){
+				aa11 = $.base64.atob(json.ralid.AA11,true);
+			}
+			if(isObj(json.ralid.AA12)){
+				aa12 = $.base64.atob(json.ralid.AA12,true);
+			}
+			if(isObj(json.ralid.AA27)){
+				aa27 ="民國"+json.ralid.AA27.toString().substr(0,3)+"年"+json.ralid.AA27.toString().substr(3,2)+"月" ;
+			}
+			if(isObj(json.ralid.AA16)){
+				aa16 =json.ralid.AA16+" 元/平方公尺"; 
+			}
+			if(isObj(json.ralid.AA05)){
+				aa05 ="民國"+json.ralid.AA05.toString().substr(0,3)+"年"+json.ralid.AA05.toString().substr(3,2)+"月"+json.ralid.AA05.toString().substr(5,2)+"日" ;
+			}
+			var str ="<table border='1' cellpadding='0' cellspacing='0' width='300' bordercolor='#FFFFFF'>"
+				+"	<tbody>"
+				+"		<tr>"
+				+"			<th colspan='2'><center>"
+				+"				<font color='#FFFFFF'><b></b>土地資訊</font>"
+				+"			</center></th>"
+				+"		</tr>"
+				+"		<tr>"
+				+"			<td class='left' width='35%'>面積</td>"
+				+"			<td class='right' >"+aa10+"</td>"
+				+"		</tr>"
+				+"		<tr>"
+				+"			<td class='left'>使用分區</td>"
+				+"			<td class='right' colspan='3'>"+aa11+"</td>"
+				+"		</tr>"
+				+"		<tr>"
+				+"			<td class='left' >使用地類別</td>"
+				+"			<td class='right' colspan='3'>"+aa12+"</td>"
+				+"		</tr>"
+				//					+"		<tr>"
+				//					+"			<td class='left'>公告現值年月</td>"
+				//					+"			<td class='right' >"+aa27+"</td>"
+				//					+"		</tr>"
+				+"		<tr>"
+				+"			<td class='left'>登記日期</td>"
+				+"			<td class='right' >"+aa05+"</td>"
+				+"		</tr>"
+				+"		<tr>"
+				+"			<td class='left'>公告土地現值</td>"
+				+"			<td class='right'>"+aa16+"</td>"
+				+"		</tr>"
+				+"		<tr>"
+				+"			<td class='left'>權利人類別</td>"
+				+"			<td class='right'>"+getLcdetypeFlag(json.lcdetype)+"</td>"
+				+"		</tr>"
+//					+"		<tr>"
+//					+"			<td colspan='2'><center><a href='javascript:void(0);' class='css_btn_class' onclick=catchBuildFlag('"+json.buildList+"','BuildInfo')><FONT COLOR='#FFFFFF'>建號查詢</FONT></a></center></td>"
+//					+"		</tr>"
+				+"		<tr>"
+				+"			<td colspan='2'><font size='2' color='red'><b>本查詢資料有時間落差，實際應以地政事務所地籍資料庫記載為準。</b></font></td>"
+				+"		</tr>"
+				+"	</tbody>"
+				+"</table>";
+			$("#land-info").html(str);
+        });
 		$('#land-info').text(prop['縣市'] + prop['鄉鎮'] + prop['事務所'] + '事務所' + prop['地段'] + prop['地號'] + '地號');
 	}, 'json');
 };
 map.on('moveend', update_info);
+
+land_info_cache = {};
+var get_land_info_data = function(area_id, section_id, land_id, callback){
+    k = [area_id, section_id, land_id].join('-');
+    if ('undefined' !== typeof(land_info_cache[k])) {
+        return callback(land_info_cache[k]);
+    }
+    url = 'https://api.nlsc.gov.tw/S09_Ralid/getLandInfo?city=' + area_id + '&sect=' + section_id + '&landno=' + land_id;
+    $.get(url, function(ret){
+            land_info_cache[k] = ret;
+            return callback(land_info_cache[k]);
+    }, 'json');
+};
+
 </script>
 </body>
 </html>
