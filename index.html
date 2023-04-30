@@ -37,9 +37,16 @@
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin=""></script>
     <script>
+var image_cache = {};
 // prompt: 我想要用 javascript 抓到某個網址的圖片，並取得其中某個 pixel 的顏色色碼，可以給我程式範例嗎
         function getImagePixelColor(url, x, y) {
             return new Promise((resolve, reject) => {
+                if ('undefined' !== typeof(image_cache[url])) {
+                    context = image_cache[url];
+                    const pixelData = context.getImageData(x, y, 1, 1).data;
+                    resolve(pixelData);
+                    return;
+                }
                 const image = new Image();
                 image.crossOrigin = "Anonymous"; // 避免跨域問題
                 image.src = url;
@@ -51,6 +58,7 @@
                     canvas.height = image.height;
 
                     context.drawImage(image, 0, 0);
+                    image_cache[url] = context;
 
                     try {
                         const pixelData = context.getImageData(x, y, 1, 1).data;
