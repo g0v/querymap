@@ -32,10 +32,12 @@
 <body>
     <div id="map"></div>
     <div id="info">
-		經緯度：<span id="latlng"></span>，地號：<span id="land-info"></span>
+		經緯度：<span id="latlng"></span>，地號：<span id="land-id"></span>
 		<ul id="list">
 		</ul>
 		<div id="land-info"></div>
+		<div id="qrybulid"></div>
+		<div id="qrypubland"></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin=""></script>
@@ -267,8 +269,21 @@ var update_info = function(){
 				+"	</tbody>"
 				+"</table>";
 			$("#land-info").html(str);
+			if(isObj(json.buildList) && json.buildList.length >0 ){
+				$("#qrybulid").show(); 
+				getBuildFlag(json.buildList,'qrybulid');
+			}
+
+			if(!isObj(json.land)){
+				$("#qrypubland").hide();
+			}
+			else{
+				$("#qrypubland_" + landid).show();
+				getPublicFlag(json.land,'qrypubland');
+			}
+
         });
-		$('#land-info').text(prop['縣市'] + prop['鄉鎮'] + prop['事務所'] + '事務所' + prop['地段'] + prop['地號'] + '地號');
+		$('#land-id').text(prop['縣市'] + prop['鄉鎮'] + prop['事務所'] + '事務所' + prop['地段'] + prop['地號'] + '地號');
 	}, 'json');
 };
 map.on('moveend', update_info);
@@ -277,12 +292,12 @@ land_info_cache = {};
 var get_land_info_data = function(area_id, section_id, land_id, callback){
     k = [area_id, section_id, land_id].join('-');
     if ('undefined' !== typeof(land_info_cache[k])) {
-        return callback(land_info_cache[k]);
+        callback(land_info_cache[k]);
     }
     url = 'https://api.nlsc.gov.tw/S09_Ralid/getLandInfo?city=' + area_id + '&sect=' + section_id + '&landno=' + land_id;
     $.get(url, function(ret){
             land_info_cache[k] = ret;
-            return callback(land_info_cache[k]);
+			callback(land_info_cache[k]);
     }, 'json');
 };
 
