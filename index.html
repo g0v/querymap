@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地圖查詢</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js" integrity="sha512-pumBsjNRGGqkPzKHndZMaAG+bir374sORyzM3uulLV14lN5LyykqNk8eEeUlUkB3U0M4FApyaHraT65ihJhDpQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-csv/1.0.21/jquery.csv.min.js" integrity="sha512-Y8iWYJDo6HiTo5xtml1g4QqHtl/PO1w+dmUpQfQSOTqKNsMhExfyPN2ncNAe9JuJUSKzwK/b6oaNPop4MXzkwg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin=""/>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+        }
+
+        #map {
+            width: 100%;
+            height: 50%;
+        }
+
+        #info {
+            width: 100%;
+            height: 50%;
+            background-color: #f8f8f8;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="info">
+		經緯度：<span id="latlng"></span>，地號：<span id="land-info"></span>
+		<ul id="list">
+		</ul>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin=""></script>
+    <script>
+// prompt: 我想要用 javascript 抓到某個網址的圖片，並取得其中某個 pixel 的顏色色碼，可以給我程式範例嗎
+        function getImagePixelColor(url, x, y) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.crossOrigin = "Anonymous"; // 避免跨域問題
+                image.src = url;
+
+                image.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.width = image.width;
+                    canvas.height = image.height;
+
+                    context.drawImage(image, 0, 0);
+
+                    try {
+                        const pixelData = context.getImageData(x, y, 1, 1).data;
+                        resolve(pixelData);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+
+                image.onerror = (error) => {
+                    reject(error);
+                };
+            });
+        }
+
+// prompt: 我要怎麼把經緯度轉換成 WMS 的 TileMatrix, TileCol, TileRow
+function latLonToTileAndPixel(zoom, lat, lon) {
+  // 將緯度轉換為弧度
+  const latRad = (lat * Math.PI) / 180;
+
+  // 計算瓷磚矩陣大小
+  const n = Math.pow(2, zoom);
+
+  // 計算 normalized coordinates
+  const xNormalized = (lon + 180) / 360 * n;
+  const yNormalized = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+
+  // 計算 TileCol 和 TileRow
+  const tileCol = Math.floor(xNormalized);
+  const tileRow = Math.floor(yNormalized);
+
+  // 計算圖片上的像素位置
+  const pixelX = Math.floor((xNormalized - tileCol) * 256);
+  const pixelY = Math.floor((yNormalized - tileRow) * 256);
+
+  return {
+    tileMatrix: zoom,
+    tileCol: tileCol,
+    tileRow: tileRow,
+    pixelX: pixelX,
+    pixelY: pixelY
+  };
+}
+
+var lat = 24.6344633;
+var lng = 120.9703995;
+// 初始化地圖
+var map = L.map('map').setView([lat, lng], 20);
+map.setMaxZoom(20);
+
+navigator.geolocation.getCurrentPosition(function(position) {
+    var latitude = position.coords.latitude;
+    var longitude = position.coords.longitude;
+	map.flyTo({lat: latitude, lng: longitude});
+}, function(error) {
+});
+
+
+// 添加地圖圖層
+const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+	attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+	maxZoom: 20,
+	maxNativeZoom: 19,
+
+});
+
+const satelliteLayer = L.tileLayer('https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/EPSG:3857/{z}/{y}/{x}', {
+	attribution: '&copy; <a href="https://www.nlsc.gov.tw/">國土測繪中心</a>',
+	maxZoom: 20,
+});
+
+osmLayer.addTo(map);
+const baseLayers = {
+	"OpenStreetMap": osmLayer,
+	"衛星空照": satelliteLayer
+};
+
+L.control.layers(baseLayers).addTo(map);
+
+
+
+var geojson = null;
+// 添加標記
+var marker = L.marker([lat, lng]).addTo(map).openPopup();
+map.on('move', function(){
+		marker.setLatLng(map.getCenter());
+});
+
+var layers = [];
+var colors = {};
+$.get('type.csv', function(ret){
+	for (var data of $.csv.toArrays(ret)) {
+		layers.push(['nlsc', data[1], data[0]]);
+	}
+	$.get('color.csv', function(csv){
+		for (var data of $.csv.toObjects(csv)) {
+			key = [data.R, data.G, data.B].join(',');
+			if ('undefined' === typeof(colors[key])) {
+				colors[key] = [];
+			}
+			colors[key].push(data['類別']);
+		}
+		update_info();
+	});
+});
+
+
+var update_info = function(){
+	var latlng = marker.getLatLng();
+	$('#latlng').text(latlng);
+	obj = latLonToTileAndPixel(18, latlng.lat, latlng.lng);
+	$('#list').html('');
+	for (let layer of layers) {
+		if (layer[0] == 'nlsc') {
+			url = 'https://wmts.nlsc.gov.tw/wmts/' + layer[1] + '/default/EPSG:3857/18/' + obj.tileRow + '/' + obj.tileCol;
+			getImagePixelColor(url, obj.pixelX, obj.pixelY).then(function(color){
+					if (color.join(',') == '0,0,0,0') {
+						return;
+					}
+					key = [color[0], color[1], color[2]].join(',');
+					if (typeof(colors[key]) !== 'undefined') {
+						$('#list').append($('<li></li>').text(layer[2] + ' ' + colors[key].join(',')));
+					} else {
+						$('#list').append($('<li></li>').text(layer[2] + ' ' + color));
+					}
+			});
+			
+		}
+	}
+	$.get('https://twland.ronny.tw/index/search?lands[]=' + latlng.lng + ',' + latlng.lat, function(ret){
+		if (geojson) {
+			geojson.removeFrom(map);
+		}
+		geojson = L.geoJSON(ret, { }).addTo(map);
+		prop = ret.features[0].properties;
+		$('#land-info').text(prop['縣市'] + prop['鄉鎮'] + prop['事務所'] + '事務所' + prop['地段'] + prop['地號'] + '地號');
+	}, 'json');
+};
+map.on('moveend', update_info);
+</script>
+</body>
+</html>
+
